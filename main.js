@@ -14,18 +14,22 @@ canvas.style.width = WIDTH + "px"
 canvas.style.height = HEIGHT + "px"
 ctx.scale(dpr, dpr)
 
-const ball = {
-  shapeIndex: 0,
-  x: WIDTH / 2,
-  rotation: 0,
-  y: HEIGHT / 2,
-  radius: 40,
-  vx: 6,
-  vy: 4,
-  color: "tomato",
-}
+let lastTime = 0
 
-const shapes = [
+const creatures = [
+  {
+    shapeIndex: 0,
+    x: WIDTH / 2,
+    rotation: 0,
+    y: HEIGHT / 2,
+    radius: 30,
+    vx: 360,
+    vy: 240,
+    color: "tomato",
+  },
+]
+
+const shapeTypes = [
   { type: "circle" },
   { type: "polygon", sides: 3 },
   { type: "star", points: 4, inner: 18 },
@@ -80,54 +84,108 @@ function drawStar(cx, cy, outerRadius, innerRadius, points) {
   }
 }
 
-function draw() {
-  ctx.clearRect(0, 0, WIDTH, HEIGHT)
-  ctx.save()
-  ctx.translate(ball.x, ball.y)
-  ctx.rotate(ball.rotation)
-  ctx.beginPath()
-  // This is my square
-  // ctx.moveTo(WIDTH / 2 - 50, HEIGHT / 2 - 50)
-  // ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 - 50)
-  // ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 + 50)
-  // ctx.lineTo(WIDTH / 2 - 50, HEIGHT / 2 + 50)
-  // ctx.closePath()
-
-  // This is my equilateral triangle
-  // ctx.moveTo(WIDTH / 2, HEIGHT / 2 - 50)
-  // ctx.lineTo(WIDTH / 2 + 75, HEIGHT / 2 + 75)
-  // ctx.lineTo(WIDTH / 2 - 75, HEIGHT / 2 + 75)
-
-  // drawPolygon(WIDTH / 2, HEIGHT / 2, 50, 3)
-  // drawStar(WIDTH / 2, HEIGHT / 2, 50, 22, 4)
-
-  const shape = shapes[ball.shapeIndex]
-  if (shape.type === "circle") {
-    ctx.arc(0, 0, ball.radius, 0, Math.PI * 2)
-  } else if (shape.type === "polygon") {
-    drawPolygon(0, 0, ball.radius, shape.sides)
-  } else if (shape.type === "star") {
-    drawStar(0, 0, ball.radius, shape.inner, shape.points)
+function createCreature(x, y, radius) {
+  const angle = Math.random() * Math.PI * 2
+  const speed = 300
+  const scale = 0.4 + Math.random() * 0.5
+  return {
+    shapeIndex: Math.floor(Math.random() * shapeTypes.length),
+    x: x,
+    rotation: 0,
+    y: y,
+    radius: Math.max(radius * scale, 6),
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    color: generateRandomColor(),
   }
-  ctx.fillStyle = ball.color
-  ctx.fill()
-  ctx.restore()
-
-  if (ball.x + ball.radius > WIDTH || ball.x - ball.radius < 0) {
-    ball.vx *= -1
-    ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
-    ball.color = generateRandomColor()
-  }
-  if (ball.y + ball.radius > HEIGHT || ball.y - ball.radius < 0) {
-    ball.vy *= -1
-    ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
-    ball.color = generateRandomColor()
-  }
-  ball.x += ball.vx
-  ball.y += ball.vy
-  ball.rotation += 0.02
-
-  requestAnimationFrame(draw)
 }
 
-draw()
+function draw(now) {
+  if (!lastTime) lastTime = now
+  const dt = (now - lastTime) / 1000
+  lastTime = now
+  const babies = []
+
+  ctx.clearRect(0, 0, WIDTH, HEIGHT)
+  for (const creature of creatures) {
+    ctx.save()
+    ctx.translate(creature.x, creature.y)
+    ctx.rotate(creature.rotation)
+    ctx.beginPath()
+
+    // This is my square
+    // ctx.moveTo(WIDTH / 2 - 50, HEIGHT / 2 - 50)
+    // ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 - 50)
+    // ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 + 50)
+    // ctx.lineTo(WIDTH / 2 - 50, HEIGHT / 2 + 50)
+    // ctx.closePath()
+
+    // This is my equilateral triangle
+    // ctx.moveTo(WIDTH / 2, HEIGHT / 2 - 50)
+    // ctx.lineTo(WIDTH / 2 + 75, HEIGHT / 2 + 75)
+    // ctx.lineTo(WIDTH / 2 - 75, HEIGHT / 2 + 75)
+
+    // drawPolygon(WIDTH / 2, HEIGHT / 2, 50, 3)
+    // drawStar(WIDTH / 2, HEIGHT / 2, 50, 22, 4)
+
+    const form = shapeTypes[creature.shapeIndex]
+    if (form.type === "circle") {
+      ctx.arc(0, 0, creature.radius, 0, Math.PI * 2)
+    } else if (form.type === "polygon") {
+      drawPolygon(0, 0, creature.radius, form.sides)
+    } else if (form.type === "star") {
+      drawStar(0, 0, creature.radius, form.inner, form.points)
+    }
+    ctx.fillStyle = creature.color
+    ctx.fill()
+    ctx.restore()
+
+    // if (ball.x + ball.radius > WIDTH || ball.x - ball.radius < 0) {
+    //   ball.vx *= -1
+    //   ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
+    //   ball.color = generateRandomColor()
+    //   babies.push(createBall(ball.x, ball.y))
+    // }
+    // if (ball.y + ball.radius > HEIGHT || ball.y - ball.radius < 0) {
+    //   ball.vy *= -1
+    //   ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
+    //   ball.color = generateRandomColor()
+    //   babies.push(createBall(ball.x, ball.y))
+    // }
+
+    if (creature.x + creature.radius > WIDTH) {
+      creature.x = WIDTH - creature.radius
+      creature.vx *= -1
+      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
+      creature.color = generateRandomColor()
+      babies.push(createCreature(creature.x, creature.y, creature.radius))
+    } else if (creature.x - creature.radius < 0) {
+      creature.x = creature.radius
+      creature.vx *= -1
+      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
+      creature.color = generateRandomColor()
+      babies.push(createCreature(creature.x, creature.y, creature.radius))
+    }
+    if (creature.y + creature.radius > HEIGHT) {
+      creature.y = HEIGHT - creature.radius
+      creature.vy *= -1
+      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
+      creature.color = generateRandomColor()
+      babies.push(createCreature(creature.x, creature.y, creature.radius))
+    } else if (creature.y - creature.radius < 0) {
+      creature.y = creature.radius
+      creature.vy *= -1
+      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
+      creature.color = generateRandomColor()
+      babies.push(createCreature(creature.x, creature.y, creature.radius))
+    }
+    creature.x += creature.vx * dt
+    creature.y += creature.vy * dt
+    creature.rotation += 0.02 * 60 * dt
+  }
+  creatures.push(...babies)
+  requestAnimationFrame(draw)
+}
+requestAnimationFrame(draw)
+
+// draw()
