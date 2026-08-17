@@ -15,8 +15,11 @@ canvas.style.height = HEIGHT + "px"
 ctx.scale(dpr, dpr)
 
 let lastTime = 0
+let breeding = true
+const MIN_BABY_RADIUS = 12
+const MAX_BABY_RADIUS = 18
 
-const creatures = [
+let creatures = [
   {
     shapeIndex: 0,
     x: WIDTH / 2,
@@ -25,6 +28,7 @@ const creatures = [
     radius: 30,
     vx: 360,
     vy: 240,
+    age: 1,
     color: "tomato",
   },
 ]
@@ -32,20 +36,20 @@ const creatures = [
 const shapeTypes = [
   { type: "circle" },
   { type: "polygon", sides: 3 },
-  { type: "star", points: 4, inner: 18 },
+  { type: "star", points: 4, inner: 0.45 },
   { type: "polygon", sides: 5 },
-  { type: "star", points: 5, inner: 22 },
+  { type: "star", points: 5, inner: 0.55 },
   { type: "polygon", sides: 4 },
   { type: "polygon", sides: 6 },
-  { type: "star", points: 6, inner: 24 },
+  { type: "star", points: 6, inner: 0.6 },
   { type: "polygon", sides: 7 },
   { type: "polygon", sides: 8 },
-  { type: "star", points: 8, inner: 26 },
+  { type: "star", points: 8, inner: 0.65 },
   { type: "polygon", sides: 10 },
-  { type: "star", points: 10, inner: 30 },
+  { type: "star", points: 10, inner: 0.75 },
   { type: "polygon", sides: 12 },
-  { type: "star", points: 7, inner: 26 },
-  { type: "star", points: 12, inner: 32 },
+  { type: "star", points: 7, inner: 0.5 },
+  { type: "star", points: 12, inner: 0.6 },
 ]
 
 function generateRandomColor() {
@@ -86,14 +90,16 @@ function drawStar(cx, cy, outerRadius, innerRadius, points) {
 
 function createCreature(x, y, radius) {
   const angle = Math.random() * Math.PI * 2
-  const speed = 300
+  const speed = 450
   const scale = 0.4 + Math.random() * 0.5
   return {
     shapeIndex: Math.floor(Math.random() * shapeTypes.length),
     x: x,
+    age: 0,
     rotation: 0,
     y: y,
-    radius: Math.max(radius * scale, 6),
+    radius:
+      MIN_BABY_RADIUS + Math.random() * (MAX_BABY_RADIUS - MIN_BABY_RADIUS),
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     color: generateRandomColor(),
@@ -105,7 +111,8 @@ function draw(now) {
   const dt = (now - lastTime) / 1000
   lastTime = now
   const babies = []
-
+  const sizeRate = breeding ? 1.2 : 0.7
+  const breedChance = breeding ? 1 : 0.35
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   for (const creature of creatures) {
     ctx.save()
@@ -134,7 +141,7 @@ function draw(now) {
     } else if (form.type === "polygon") {
       drawPolygon(0, 0, creature.radius, form.sides)
     } else if (form.type === "star") {
-      drawStar(0, 0, creature.radius, form.inner, form.points)
+      drawStar(0, 0, creature.radius, creature.radius * form.inner, form.points)
     }
     ctx.fillStyle = creature.color
     ctx.fill()
@@ -152,38 +159,50 @@ function draw(now) {
     //   ball.color = generateRandomColor()
     //   babies.push(createBall(ball.x, ball.y))
     // }
-
+    let hit = false
     if (creature.x + creature.radius > WIDTH) {
       creature.x = WIDTH - creature.radius
       creature.vx *= -1
-      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
-      creature.color = generateRandomColor()
-      babies.push(createCreature(creature.x, creature.y, creature.radius))
+      hit = true
+      // if (!breeding) creature.radius *= 0.8
     } else if (creature.x - creature.radius < 0) {
       creature.x = creature.radius
       creature.vx *= -1
-      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
-      creature.color = generateRandomColor()
-      babies.push(createCreature(creature.x, creature.y, creature.radius))
+      hit = true
+      // if (!breeding) creature.radius *= 0.8
     }
     if (creature.y + creature.radius > HEIGHT) {
       creature.y = HEIGHT - creature.radius
       creature.vy *= -1
-      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
-      creature.color = generateRandomColor()
-      babies.push(createCreature(creature.x, creature.y, creature.radius))
+      hit = true
+
+      // if (!breeding) creature.radius *= 0.8
     } else if (creature.y - creature.radius < 0) {
       creature.y = creature.radius
       creature.vy *= -1
+      hit = true
+
+      // if (!breeding) creature.radius *= 0.8
+    }
+    if (hit) {
       creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
       creature.color = generateRandomColor()
-      babies.push(createCreature(creature.x, creature.y, creature.radius))
+      creature.radius = Math.min(creature.radius * sizeRate, 40)
+
+      if (creature.age > 0.5 && Math.random() < breedChance) {
+        babies.push(createCreature(creature.x, creature.y))
+      }
     }
+    creature.age += dt
     creature.x += creature.vx * dt
     creature.y += creature.vy * dt
+    // if (breeding) creature.radius = Math.min(creature.radius + 6 * dt, 40)
     creature.rotation += 0.02 * 60 * dt
   }
   creatures.push(...babies)
+  creatures = creatures.filter((creature) => creature.radius > 10)
+  if (creatures.length > 400) breeding = false
+  if (creatures.length < 80) breeding = true
   requestAnimationFrame(draw)
 }
 requestAnimationFrame(draw)
