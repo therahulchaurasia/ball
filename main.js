@@ -16,6 +16,8 @@ ctx.scale(dpr, dpr)
 
 let lastTime = 0
 let breeding = true
+let mouseX = WIDTH / 2
+let mouseY = -1000
 const MIN_BABY_RADIUS = 12
 const MAX_BABY_RADIUS = 18
 
@@ -106,99 +108,95 @@ function createCreature(x, y, radius) {
   }
 }
 
+// Paints one creature. Reads the creature, never changes it.
+function drawCreature(creature) {
+  ctx.save()
+  ctx.translate(creature.x, creature.y)
+  ctx.rotate(creature.rotation)
+  ctx.beginPath()
+
+  const form = shapeTypes[creature.shapeIndex]
+  if (form.type === "circle") {
+    ctx.arc(0, 0, creature.radius, 0, Math.PI * 2)
+  } else if (form.type === "polygon") {
+    drawPolygon(0, 0, creature.radius, form.sides)
+  } else if (form.type === "star") {
+    drawStar(0, 0, creature.radius, creature.radius * form.inner, form.points)
+  }
+
+  ctx.fillStyle = creature.color
+  ctx.fill()
+  ctx.restore()
+}
+
+// Bounces, resizes, ages and moves one creature.
+// Returns a baby if this bounce made one, otherwise null.
+function moveCreature(creature, dt) {
+  const sizeRate = breeding ? 1.2 : 0.7
+  const breedChance = breeding ? 1 : 0.35
+  const dx = creature.x - mouseX
+  const dy = creature.y - mouseY
+  const dist = Math.hypot(dx, dy)
+
+  if (dist < 150 && dist > 0) {
+    creature.vx += (dx / dist) * 1200 * dt
+    creature.vy += (dy / dist) * 1200 * dt
+  }
+
+  let hit = false
+  if (creature.x + creature.radius > WIDTH) {
+    creature.x = WIDTH - creature.radius
+    creature.vx *= -1
+    hit = true
+  } else if (creature.x - creature.radius < 0) {
+    creature.x = creature.radius
+    creature.vx *= -1
+    hit = true
+  }
+  if (creature.y + creature.radius > HEIGHT) {
+    creature.y = HEIGHT - creature.radius
+    creature.vy *= -1
+    hit = true
+  } else if (creature.y - creature.radius < 0) {
+    creature.y = creature.radius
+    creature.vy *= -1
+    hit = true
+  }
+
+  // One block, so a corner hit (both axes in one frame) only counts once.
+  let baby = null
+  if (hit) {
+    creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
+    creature.color = generateRandomColor()
+    creature.radius = Math.min(creature.radius * sizeRate, 40)
+
+    if (creature.age > 0.5 && Math.random() < breedChance) {
+      baby = createCreature(creature.x, creature.y)
+    }
+  }
+
+  creature.age += dt
+  creature.x += creature.vx * dt
+  creature.y += creature.vy * dt
+  creature.rotation += 0.02 * 60 * dt
+
+  return baby
+}
+
 function draw(now) {
   if (!lastTime) lastTime = now
   const dt = (now - lastTime) / 1000
   lastTime = now
   const babies = []
-  const sizeRate = breeding ? 1.2 : 0.7
-  const breedChance = breeding ? 1 : 0.35
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
+
   for (const creature of creatures) {
-    ctx.save()
-    ctx.translate(creature.x, creature.y)
-    ctx.rotate(creature.rotation)
-    ctx.beginPath()
+    drawCreature(creature)
 
-    // This is my square
-    // ctx.moveTo(WIDTH / 2 - 50, HEIGHT / 2 - 50)
-    // ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 - 50)
-    // ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 + 50)
-    // ctx.lineTo(WIDTH / 2 - 50, HEIGHT / 2 + 50)
-    // ctx.closePath()
-
-    // This is my equilateral triangle
-    // ctx.moveTo(WIDTH / 2, HEIGHT / 2 - 50)
-    // ctx.lineTo(WIDTH / 2 + 75, HEIGHT / 2 + 75)
-    // ctx.lineTo(WIDTH / 2 - 75, HEIGHT / 2 + 75)
-
-    // drawPolygon(WIDTH / 2, HEIGHT / 2, 50, 3)
-    // drawStar(WIDTH / 2, HEIGHT / 2, 50, 22, 4)
-
-    const form = shapeTypes[creature.shapeIndex]
-    if (form.type === "circle") {
-      ctx.arc(0, 0, creature.radius, 0, Math.PI * 2)
-    } else if (form.type === "polygon") {
-      drawPolygon(0, 0, creature.radius, form.sides)
-    } else if (form.type === "star") {
-      drawStar(0, 0, creature.radius, creature.radius * form.inner, form.points)
-    }
-    ctx.fillStyle = creature.color
-    ctx.fill()
-    ctx.restore()
-
-    // if (ball.x + ball.radius > WIDTH || ball.x - ball.radius < 0) {
-    //   ball.vx *= -1
-    //   ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
-    //   ball.color = generateRandomColor()
-    //   babies.push(createBall(ball.x, ball.y))
-    // }
-    // if (ball.y + ball.radius > HEIGHT || ball.y - ball.radius < 0) {
-    //   ball.vy *= -1
-    //   ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
-    //   ball.color = generateRandomColor()
-    //   babies.push(createBall(ball.x, ball.y))
-    // }
-    let hit = false
-    if (creature.x + creature.radius > WIDTH) {
-      creature.x = WIDTH - creature.radius
-      creature.vx *= -1
-      hit = true
-      // if (!breeding) creature.radius *= 0.8
-    } else if (creature.x - creature.radius < 0) {
-      creature.x = creature.radius
-      creature.vx *= -1
-      hit = true
-      // if (!breeding) creature.radius *= 0.8
-    }
-    if (creature.y + creature.radius > HEIGHT) {
-      creature.y = HEIGHT - creature.radius
-      creature.vy *= -1
-      hit = true
-
-      // if (!breeding) creature.radius *= 0.8
-    } else if (creature.y - creature.radius < 0) {
-      creature.y = creature.radius
-      creature.vy *= -1
-      hit = true
-
-      // if (!breeding) creature.radius *= 0.8
-    }
-    if (hit) {
-      creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
-      creature.color = generateRandomColor()
-      creature.radius = Math.min(creature.radius * sizeRate, 40)
-
-      if (creature.age > 0.5 && Math.random() < breedChance) {
-        babies.push(createCreature(creature.x, creature.y))
-      }
-    }
-    creature.age += dt
-    creature.x += creature.vx * dt
-    creature.y += creature.vy * dt
-    // if (breeding) creature.radius = Math.min(creature.radius + 6 * dt, 40)
-    creature.rotation += 0.02 * 60 * dt
+    const baby = moveCreature(creature, dt)
+    if (baby) babies.push(baby)
   }
+
   creatures.push(...babies)
   creatures = creatures.filter((creature) => creature.radius > 10)
   if (creatures.length > 400) breeding = false
@@ -207,4 +205,49 @@ function draw(now) {
 }
 requestAnimationFrame(draw)
 
+canvas.addEventListener("mousemove", (e) => {
+  const rect = canvas.getBoundingClientRect()
+  mouseX = e.clientX - rect.left
+  mouseY = e.clientY - rect.top
+})
+
+// This is my square
+// ctx.moveTo(WIDTH / 2 - 50, HEIGHT / 2 - 50)
+// ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 - 50)
+// ctx.lineTo(WIDTH / 2 + 50, HEIGHT / 2 + 50)
+// ctx.lineTo(WIDTH / 2 - 50, HEIGHT / 2 + 50)
+// ctx.closePath()
+
+// This is my equilateral triangle
+// ctx.moveTo(WIDTH / 2, HEIGHT / 2 - 50)
+// ctx.lineTo(WIDTH / 2 + 75, HEIGHT / 2 + 75)
+// ctx.lineTo(WIDTH / 2 - 75, HEIGHT / 2 + 75)
+
+// drawPolygon(WIDTH / 2, HEIGHT / 2, 50, 3)
+// drawStar(WIDTH / 2, HEIGHT / 2, 50, 22, 4)
+
+// Day 4: one bounce block per axis with ||. Flipped the velocity but never
+// pushed the shape back inside, so it bred every frame while out of bounds.
+// if (ball.x + ball.radius > WIDTH || ball.x - ball.radius < 0) {
+//   ball.vx *= -1
+//   ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
+//   ball.color = generateRandomColor()
+//   babies.push(createBall(ball.x, ball.y))
+// }
+// if (ball.y + ball.radius > HEIGHT || ball.y - ball.radius < 0) {
+//   ball.vy *= -1
+//   ball.shapeIndex = (ball.shapeIndex + 1) % shapes.length
+//   ball.color = generateRandomColor()
+//   babies.push(createBall(ball.x, ball.y))
+// }
+
+// Day 5: shrink written per-axis, so a corner hit shrank twice. Replaced by
+// sizeRate inside the single `if (hit)` block.
+// if (!breeding) creature.radius *= 0.8
+
+// Day 5: growth over time instead of growth per bounce. Made the death
+// threshold unreachable — tiny creatures regained size just by travelling.
+// if (breeding) creature.radius = Math.min(creature.radius + 6 * dt, 40)
+
+// Day 4: kickstart without a timestamp, so `now` was undefined and dt was NaN.
 // draw()
