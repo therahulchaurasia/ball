@@ -2,11 +2,11 @@ const canvas = document.getElementById("c")
 const ctx = canvas.getContext("2d")
 
 // Logical size (CSS pixels)
-const WIDTH = 600
-const HEIGHT = 600
+const WIDTH = 1200
+const HEIGHT = 800
 
 // DPR setup — backing store bigger than CSS size so retina stays crisp.
-// After ctx.scale(dpr, dpr), draw everything in logical coords (0..600).
+// After ctx.scale(dpr, dpr), draw everything in logical coords (0..WIDTH/HEIGHT).
 const dpr = window.devicePixelRatio || 1
 canvas.width = WIDTH * dpr
 canvas.height = HEIGHT * dpr
@@ -15,11 +15,11 @@ canvas.style.height = HEIGHT + "px"
 ctx.scale(dpr, dpr)
 
 let lastTime = 0
-let breeding = true
 let mouseX = WIDTH / 2
 let mouseY = -1000
-const MIN_BABY_RADIUS = 12
-const MAX_BABY_RADIUS = 18
+const MIN_BABY_RADIUS = 20
+const MAX_BABY_RADIUS = 28
+const MAX_CREATURES = 50
 
 let creatures = [
   {
@@ -28,7 +28,7 @@ let creatures = [
     rotation: 0,
     y: HEIGHT / 2,
     radius: 30,
-    vx: 360,
+    vx: 480,
     vy: 240,
     age: 1,
     color: "tomato",
@@ -132,16 +132,14 @@ function drawCreature(creature) {
 // Bounces, resizes, ages and moves one creature.
 // Returns a baby if this bounce made one, otherwise null.
 function moveCreature(creature, dt) {
-  const sizeRate = breeding ? 1.2 : 0.7
-  const breedChance = breeding ? 1 : 0.35
-  const dx = creature.x - mouseX
-  const dy = creature.y - mouseY
-  const dist = Math.hypot(dx, dy)
+  // const dx = creature.x - mouseX
+  // const dy = creature.y - mouseY
+  // const dist = Math.hypot(dx, dy)
 
-  if (dist < 150 && dist > 0) {
-    creature.vx += (dx / dist) * 1200 * dt
-    creature.vy += (dy / dist) * 1200 * dt
-  }
+  // if (dist < 150 && dist > 0) {
+  //   creature.vx += (dx / dist) * 1200 * dt
+  //   creature.vy += (dy / dist) * 1200 * dt
+  // }
 
   let hit = false
   if (creature.x + creature.radius > WIDTH) {
@@ -168,9 +166,9 @@ function moveCreature(creature, dt) {
   if (hit) {
     creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
     creature.color = generateRandomColor()
-    creature.radius = Math.min(creature.radius * sizeRate, 40)
 
-    if (creature.age > 0.5 && Math.random() < breedChance) {
+    // Radius is fixed at birth now — collisions need stable bodies.
+    if (creature.age > 0.5) {
       baby = createCreature(creature.x, creature.y)
     }
   }
@@ -183,24 +181,87 @@ function moveCreature(creature, dt) {
   return baby
 }
 
+// Bigger bodies shove smaller ones around. Area, not radius, so the
+// difference between a 20 and a 28 actually reads on screen.
+function massOf(creature) {
+  return creature.radius * creature.radius
+}
+
+// Every pair, once: j starts at i + 1 so nobody checks themselves and no
+// pair gets handled twice.
+function resolveCollisions() {
+  for (let i = 0; i < creatures.length; i++) {
+    for (let j = i + 1; j < creatures.length; j++) {
+      const a = creatures[i]
+      const b = creatures[j]
+
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const dist = Math.hypot(dx, dy)
+      const touchDist = a.radius + b.radius
+      if (dist >= touchDist) continue
+
+      // Babies spawn on the parent's exact centre, so dist can be a true 0
+      // and dx / dist is NaN. Any direction will do — they just need one.
+      let nx = 1
+      let ny = 0
+      if (dist > 0) {
+        nx = dx / dist
+        ny = dy / dist
+      }
+
+      const invMassA = 1 / massOf(a)
+      const invMassB = 1 / massOf(b)
+      const invMassSum = invMassA + invMassB
+
+      // Push apart along the normal, split by mass — the heavy one barely
+      // moves. Without this they stay overlapped and re-collide every frame.
+      const overlap = touchDist - dist
+      a.x -= nx * overlap * (invMassA / invMassSum)
+      a.y -= ny * overlap * (invMassA / invMassSum)
+      b.x += nx * overlap * (invMassB / invMassSum)
+      b.y += ny * overlap * (invMassB / invMassSum)
+
+      // Closing speed along the normal. Positive means they're already
+      // separating — a leftover overlap from last frame, not a new hit.
+      const closing = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
+      if (closing > 0) continue
+
+      // Elastic, so no energy leaves the system and the world stays lively.
+      const impulse = (-2 * closing) / invMassSum
+      a.vx -= impulse * invMassA * nx
+      a.vy -= impulse * invMassA * ny
+      b.vx += impulse * invMassB * nx
+      b.vy += impulse * invMassB * ny
+    }
+  }
+}
+
 function draw(now) {
   if (!lastTime) lastTime = now
   const dt = (now - lastTime) / 1000
   lastTime = now
   const babies = []
-  ctx.clearRect(0, 0, WIDTH, HEIGHT)
 
+  // Move everyone, settle the pile-ups, then paint. Drawing mid-update
+  // showed the overlapped frame before it was resolved.
   for (const creature of creatures) {
-    drawCreature(creature)
-
     const baby = moveCreature(creature, dt)
     if (baby) babies.push(baby)
   }
 
-  creatures.push(...babies)
-  creatures = creatures.filter((creature) => creature.radius > 10)
-  if (creatures.length > 400) breeding = false
-  if (creatures.length < 80) breeding = true
+  resolveCollisions()
+
+  ctx.clearRect(0, 0, WIDTH, HEIGHT)
+  for (const creature of creatures) {
+    drawCreature(creature)
+  }
+
+  // One at a time — checking once and pushing the whole batch overshoots.
+  for (const baby of babies) {
+    if (creatures.length >= MAX_CREATURES) break
+    creatures.push(baby)
+  }
   requestAnimationFrame(draw)
 }
 requestAnimationFrame(draw)
@@ -251,3 +312,19 @@ canvas.addEventListener("mousemove", (e) => {
 
 // Day 4: kickstart without a timestamp, so `now` was undefined and dt was NaN.
 // draw()
+
+// Day 7: capping the population at 50 put the 400/80 thresholds out of reach,
+// so `breeding` was stuck true forever. Everything it drove went with it —
+// grow/shrink rate, breed chance, and death by shrinking (nothing could ever
+// reach the radius floor again).
+// let breeding = true
+// const sizeRate = breeding ? 1.2 : 0.7
+// const breedChance = breeding ? 1 : 0.35
+// creature.radius = Math.min(creature.radius * sizeRate, 40)
+// creatures = creatures.filter((creature) => creature.radius > 10)
+// if (creatures.length > 400) breeding = false
+// if (creatures.length < 80) breeding = true
+
+// Day 7: cap checked once per frame instead of once per baby, so the whole
+// batch went in regardless — 49 creatures with 6 babies queued gave 55.
+// if (creatures.length < 50) creatures.push(...babies)
