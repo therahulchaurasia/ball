@@ -167,7 +167,6 @@ function moveCreature(creature, dt) {
     creature.shapeIndex = (creature.shapeIndex + 1) % shapeTypes.length
     creature.color = generateRandomColor()
 
-    // Radius is fixed at birth now — collisions need stable bodies.
     if (creature.age > 0.5) {
       baby = createCreature(creature.x, creature.y)
     }
@@ -237,6 +236,109 @@ function resolveCollisions() {
   }
 }
 
+// ---- Day 8: the wall ------------------------------------------------------
+
+const walls = []
+const WALL_LIFE = 8            // seconds a wall survives
+const MIN_WALL_LENGTH = 25     // shorter than this and it never existed
+
+// The segment being dragged right now. Visible, but not collidable until
+// it is released and passes the length check.
+let pendingWall = null
+
+// Written by distanceToSegment on every call, read straight after it.
+let closestPoint = null
+
+// Contact points from this frame, cleared and refilled each time.
+let impacts = []
+
+// Shortest distance from a point to the segment — clamped, so the ends
+// stop pretending the wall runs on forever.
+function distanceToSegment(px, py, x1, y1, x2, y2) {
+  // The wall as a direction: from end 1 toward end 2.
+  const wx = x2 - x1
+  const wy = y2 - y1
+
+  // The ball, measured from that same starting end.
+  const bx = px - x1
+  const by = py - y1
+
+  // How far along the wall the ball sits. 0 = at end 1, 1 = at end 2.
+  const t = (bx * wx + by * wy) / (wx * wx + wy * wy)
+  const clamped = Math.max(0, Math.min(1, t))
+  // The point on the wall closest to the ball.
+  const cx = x1 + clamped * wx
+  const cy = y1 + clamped * wy
+
+  // Stashed so draw() can paint it. Debug only.
+  closestPoint = { x: cx, y: cy }
+
+  return Math.hypot(px - cx, py - cy)
+}
+
+// Pushes a creature clear of every wall it is touching and reflects it.
+function bounceOffWall(creature) {
+  for (const wall of walls) {
+    const d = distanceToSegment(
+      creature.x,
+      creature.y,
+      wall.x1,
+      wall.y1,
+      wall.x2,
+      wall.y2
+    )
+
+    if (d >= creature.radius || d === 0) continue
+
+    // Direction from the wall out to the ball — that is the normal.
+    const nx = (creature.x - closestPoint.x) / d
+    const ny = (creature.y - closestPoint.y) / d
+
+    // Lift it clear of the wall so it cannot get stuck inside.
+    creature.x = closestPoint.x + nx * creature.radius
+    creature.y = closestPoint.y + ny * creature.radius
+
+    // Reflect: v - 2(v·n)n
+    const dot = creature.vx * nx + creature.vy * ny
+    creature.vx -= 2 * dot * nx
+    creature.vy -= 2 * dot * ny
+
+    impacts.push({ x: closestPoint.x, y: closestPoint.y })
+  }
+}
+
+// Walls fade as they run out of time, so a dying wall is visible before
+// it goes.
+function drawWalls() {
+  ctx.lineWidth = 4
+  ctx.lineCap = "round"
+
+  for (const wall of walls) {
+    ctx.beginPath()
+    ctx.moveTo(wall.x1, wall.y1)
+    ctx.lineTo(wall.x2, wall.y2)
+    ctx.strokeStyle = `rgba(235, 235, 240, ${wall.life / WALL_LIFE})`
+    ctx.stroke()
+  }
+
+  // The drag in progress, dimmer so it reads as not real yet.
+  if (pendingWall) {
+    ctx.beginPath()
+    ctx.moveTo(pendingWall.x1, pendingWall.y1)
+    ctx.lineTo(pendingWall.x2, pendingWall.y2)
+    ctx.strokeStyle = "rgba(235, 235, 240, 0.3)"
+    ctx.stroke()
+  }
+
+  // Where creatures actually struck this frame.
+  for (const impact of impacts) {
+    ctx.beginPath()
+    ctx.arc(impact.x, impact.y, 6, 0, Math.PI * 2)
+    ctx.fillStyle = "yellow"
+    ctx.fill()
+  }
+}
+
 function draw(now) {
   if (!lastTime) lastTime = now
   const dt = (now - lastTime) / 1000
@@ -252,7 +354,19 @@ function draw(now) {
 
   resolveCollisions()
 
+  impacts = []
+  for (const creature of creatures) {
+    bounceOffWall(creature)
+  }
+
+  // Walls run down on their own — your power over them is temporary.
+  for (let i = walls.length - 1; i >= 0; i--) {
+    walls[i].life -= dt
+    if (walls[i].life <= 0) walls.splice(i, 1)
+  }
+
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
+  drawWalls()
   for (const creature of creatures) {
     drawCreature(creature)
   }
@@ -266,10 +380,41 @@ function draw(now) {
 }
 requestAnimationFrame(draw)
 
-canvas.addEventListener("mousemove", (e) => {
+// Canvas coords, not page coords — the canvas is centred, so clientX alone
+// is off by the whole left margin.
+function pointerPos(e) {
   const rect = canvas.getBoundingClientRect()
-  mouseX = e.clientX - rect.left
-  mouseY = e.clientY - rect.top
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+}
+
+// Press starts a wall, drag moves its far end, release commits it.
+canvas.addEventListener("mousedown", (e) => {
+  const p = pointerPos(e)
+  pendingWall = { x1: p.x, y1: p.y, x2: p.x, y2: p.y, life: WALL_LIFE }
+})
+
+canvas.addEventListener("mousemove", (e) => {
+  const p = pointerPos(e)
+  mouseX = p.x
+  mouseY = p.y
+  if (pendingWall) {
+    pendingWall.x2 = p.x
+    pendingWall.y2 = p.y
+  }
+})
+
+// A plain click has no direction to reflect off, and a stubby one is just
+// a speck on screen. Below the minimum it never existed.
+canvas.addEventListener("mouseup", () => {
+  if (!pendingWall) return
+
+  const length = Math.hypot(
+    pendingWall.x2 - pendingWall.x1,
+    pendingWall.y2 - pendingWall.y1
+  )
+  if (length >= MIN_WALL_LENGTH) walls.push(pendingWall)
+
+  pendingWall = null
 })
 
 // This is my square
