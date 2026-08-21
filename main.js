@@ -4,7 +4,6 @@ const ctx = canvas.getContext("2d")
 // Logical size (CSS pixels)
 const WIDTH = 1200
 const HEIGHT = 800
-
 // DPR setup — backing store bigger than CSS size so retina stays crisp.
 // After ctx.scale(dpr, dpr), draw everything in logical coords (0..WIDTH/HEIGHT).
 const dpr = window.devicePixelRatio || 1
@@ -20,6 +19,8 @@ let mouseY = -1000
 const MIN_BABY_RADIUS = 20
 const MAX_BABY_RADIUS = 28
 const MAX_CREATURES = 50
+const MAX_RADIUS = 80
+const EAT_RATIO = 1.2
 
 let creatures = [
   {
@@ -90,18 +91,18 @@ function drawStar(cx, cy, outerRadius, innerRadius, points) {
   }
 }
 
-function createCreature(x, y, radius) {
+function createCreature(x, y, parentRadius) {
+  const babyRadius =
+    MIN_BABY_RADIUS + Math.random() * (MAX_BABY_RADIUS - MIN_BABY_RADIUS)
   const angle = Math.random() * Math.PI * 2
   const speed = 450
-  const scale = 0.4 + Math.random() * 0.5
   return {
     shapeIndex: Math.floor(Math.random() * shapeTypes.length),
-    x: x,
+    x: x + Math.cos(angle) * (parentRadius + babyRadius),
     age: 0,
     rotation: 0,
-    y: y,
-    radius:
-      MIN_BABY_RADIUS + Math.random() * (MAX_BABY_RADIUS - MIN_BABY_RADIUS),
+    y: y + Math.sin(angle) * (parentRadius + babyRadius),
+    radius: babyRadius,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     color: generateRandomColor(),
@@ -168,7 +169,7 @@ function moveCreature(creature, dt) {
     creature.color = generateRandomColor()
 
     if (creature.age > 0.5) {
-      baby = createCreature(creature.x, creature.y)
+      baby = createCreature(creature.x, creature.y, creature.radius)
     }
   }
 
@@ -193,15 +194,34 @@ function resolveCollisions() {
     for (let j = i + 1; j < creatures.length; j++) {
       const a = creatures[i]
       const b = creatures[j]
-
+      if (a.eaten || b.eaten) continue
       const dx = b.x - a.x
       const dy = b.y - a.y
       const dist = Math.hypot(dx, dy)
       const touchDist = a.radius + b.radius
       if (dist >= touchDist) continue
+      const bigger = a.radius > b.radius ? a : b
+      const smaller = a.radius > b.radius ? b : a
 
-      // Babies spawn on the parent's exact centre, so dist can be a true 0
-      // and dx / dist is NaN. Any direction will do — they just need one.
+      if (bigger.radius >= MAX_RADIUS && smaller.radius >= MAX_RADIUS) {
+        bigger.eaten = true
+        smaller.eaten = true
+        continue
+      }
+
+      if (
+        bigger.radius < MAX_RADIUS &&
+        bigger.radius > smaller.radius * EAT_RATIO
+      ) {
+        smaller.eaten = true
+
+        bigger.radius = Math.min(
+          Math.sqrt(bigger.radius ** 2 + smaller.radius ** 2),
+          MAX_RADIUS,
+        )
+        continue
+      }
+
       let nx = 1
       let ny = 0
       if (dist > 0) {
@@ -234,13 +254,14 @@ function resolveCollisions() {
       b.vy += impulse * invMassB * ny
     }
   }
+  creatures = creatures.filter((creature) => !creature.eaten)
 }
 
 // ---- Day 8: the wall ------------------------------------------------------
 
 const walls = []
-const WALL_LIFE = 8            // seconds a wall survives
-const MIN_WALL_LENGTH = 25     // shorter than this and it never existed
+const WALL_LIFE = 8 // seconds a wall survives
+const MIN_WALL_LENGTH = 25 // shorter than this and it never existed
 
 // The segment being dragged right now. Visible, but not collidable until
 // it is released and passes the length check.
@@ -285,7 +306,7 @@ function bounceOffWall(creature) {
       wall.x1,
       wall.y1,
       wall.x2,
-      wall.y2
+      wall.y2,
     )
 
     if (d >= creature.radius || d === 0) continue
@@ -410,7 +431,7 @@ canvas.addEventListener("mouseup", () => {
 
   const length = Math.hypot(
     pendingWall.x2 - pendingWall.x1,
-    pendingWall.y2 - pendingWall.y1
+    pendingWall.y2 - pendingWall.y1,
   )
   if (length >= MIN_WALL_LENGTH) walls.push(pendingWall)
 
