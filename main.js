@@ -206,6 +206,8 @@ function resolveCollisions() {
       if (bigger.radius >= MAX_RADIUS && smaller.radius >= MAX_RADIUS) {
         bigger.eaten = true
         smaller.eaten = true
+        burst(bigger.x, bigger.y, bigger.color)
+        burst(smaller.x, smaller.y, smaller.color)
         continue
       }
 
@@ -222,6 +224,8 @@ function resolveCollisions() {
         continue
       }
 
+      // Two creatures at the exact same point have no separation direction, so
+      // dx/dist would be 0/0. Falls back to shoving them apart along x.
       let nx = 1
       let ny = 0
       if (dist > 0) {
@@ -257,15 +261,36 @@ function resolveCollisions() {
   creatures = creatures.filter((creature) => !creature.eaten)
 }
 
+function popAt(x, y) {
+  for (const creature of creatures) {
+    const d = Math.hypot(x - creature.x, y - creature.y)
+    if (d < creature.radius) {
+      creature.eaten = true
+      break
+    }
+  }
+}
+
+function creatureAt(x, y) {
+  for (const creature of creatures) {
+    const d = Math.hypot(x - creature.x, y - creature.y)
+    if (d < creature.radius) return creature
+  }
+  return null
+}
+
 // ---- Day 8: the wall ------------------------------------------------------
 
 const walls = []
 const WALL_LIFE = 8 // seconds a wall survives
 const MIN_WALL_LENGTH = 25 // shorter than this and it never existed
 
+const particles = []
+const PARTICLE_LIFE = 0.6
 // The segment being dragged right now. Visible, but not collidable until
 // it is released and passes the length check.
 let pendingWall = null
+let pendingPop = null
 
 // Written by distanceToSegment on every call, read straight after it.
 let closestPoint = null
@@ -385,12 +410,14 @@ function draw(now) {
     walls[i].life -= dt
     if (walls[i].life <= 0) walls.splice(i, 1)
   }
+  updateParticles(dt)
 
   ctx.clearRect(0, 0, WIDTH, HEIGHT)
   drawWalls()
   for (const creature of creatures) {
     drawCreature(creature)
   }
+  drawParticles()
 
   // One at a time — checking once and pushing the whole batch overshoots.
   for (const baby of babies) {
@@ -401,6 +428,33 @@ function draw(now) {
 }
 requestAnimationFrame(draw)
 
+function burst(x, y, color) {
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const speed = 200 + Math.random() * 200
+    particles.push({
+      x: x,
+      y: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: PARTICLE_LIFE,
+      color: color,
+    })
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i]
+    p.x += p.vx * dt
+    p.y += p.vy * dt
+    p.life -= dt
+    if (p.life <= 0) {
+      particles.splice(i, 1)
+    }
+  }
+}
+
 // Canvas coords, not page coords — the canvas is centred, so clientX alone
 // is off by the whole left margin.
 function pointerPos(e) {
@@ -408,10 +462,22 @@ function pointerPos(e) {
   return { x: e.clientX - rect.left, y: e.clientY - rect.top }
 }
 
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / PARTICLE_LIFE
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2)
+    ctx.fillStyle = p.color
+    ctx.fill()
+  }
+  ctx.globalAlpha = 1
+}
+
 // Press starts a wall, drag moves its far end, release commits it.
 canvas.addEventListener("mousedown", (e) => {
   const p = pointerPos(e)
   pendingWall = { x1: p.x, y1: p.y, x2: p.x, y2: p.y, life: WALL_LIFE }
+  pendingPop = creatureAt(p.x, p.y)
 })
 
 canvas.addEventListener("mousemove", (e) => {
@@ -433,7 +499,14 @@ canvas.addEventListener("mouseup", () => {
     pendingWall.x2 - pendingWall.x1,
     pendingWall.y2 - pendingWall.y1,
   )
-  if (length >= MIN_WALL_LENGTH) walls.push(pendingWall)
+  if (length >= MIN_WALL_LENGTH) {
+    walls.push(pendingWall)
+  } else if (pendingPop) {
+    pendingPop.eaten = true
+    burst(pendingPop.x, pendingPop.y, pendingPop.color)
+  }
+
+  pendingPop = null
 
   pendingWall = null
 })
@@ -494,3 +567,19 @@ canvas.addEventListener("mouseup", () => {
 // Day 7: cap checked once per frame instead of once per baby, so the whole
 // batch went in regardless — 49 creatures with 6 babies queued gave 55.
 // if (creatures.length < 50) creatures.push(...babies)
+
+// Day 9: conserved momentum on every meal, the way real physics would. Wrong
+// for creatures — a meal averages a fast body against one heading anywhere, and
+// random directions cancel, so speed only ever leaked out of the world. Ended
+// up with a screen full of slow giants that were too sluggish to ever find each
+// other and annihilate.
+// const totalMass = bigger.radius ** 2 + smaller.radius ** 2
+// bigger.vx = (bigger.vx * bigger.radius ** 2 + smaller.vx * smaller.radius ** 2) / totalMass
+// bigger.vy = (bigger.vy * bigger.radius ** 2 + smaller.vy * smaller.radius ** 2) / totalMass
+
+// Day 10: hit-tested at mouseup but with the mousedown position. A click takes
+// 80-150ms and a creature moves 450px/s, so it had already travelled more than
+// its own diameter by the time I looked — only creatures moving straight along
+// the line of the click ever popped. Now the target is grabbed at mousedown and
+// the decision (wall or pop) is made at mouseup.
+// const target = creatureAt(p.x, p.y)
